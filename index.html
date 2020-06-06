@@ -1,0 +1,1497 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" type="text/css" href="style/main.css">
+<script type="text/javascript" src="js/jquery-3.1.1.min.js"></script>
+<title>gobang</title>
+<style type="text/css">
+
+</style>
+</head>
+
+<body>
+	<div id="chess_skin">
+        <div id="chess_page">
+        	<!--菜单栏-->
+            <div id="chess_head">
+                <i></i>
+                <span>五子棋</span>
+                <ul id="chess_more">
+                    <li id="chess_again" title="再来一局 ？">开始</li>
+                </ul>
+                <select id="choose_chessboard" title="选择棋盘样式">
+                    <option id="chess_dark" value="dark">dark</option>
+                    <option id="chess_white" value="white">white</option>
+                </select>
+                <select id="choose_chessnumber" title="选择棋格数目">
+                    <option value="15">15x15</option>
+                    <option value="19">19x19</option>
+                </select>
+                <select id="choose_chessmode" title="选择对战模式">
+                    <option value="PC">PC</option>
+                    <option value="PP">PP</option>
+                    <option value="CC">CC</option>
+                </select>
+                <select id="first_hand" title="选择先手">
+                    <option value="person">人</option>
+                    <option value="computer">机</option>
+                </select>
+                <ul id="optimize_AI" title="点击暂停AI ！">
+                    <li id="AI"></li>
+                </ul>
+                <ul id="recording">
+                	<li id="game_recording"></li>
+                </ul>
+            </div>
+            <!--五子棋棋盘-->
+            <canvas id="chess" width="450px" height="450px"></canvas>
+        </div>
+    </div>
+    <!--下棋提示栏-->
+    <div id="prompt_chess" style="display:none">
+        <ul id="timing">
+            <li id="white_time"><span id="show_time_white"></span></li>
+            <li class="placeholder"></li>
+            <li id="countdown" title=""><span id="show_countdown"></span></li>
+            <li class="placeholder"></li>
+            <li id="black_time"><span id="show_time_black"></span></li>
+        </ul>
+    </div>
+    <!--下棋提示栏：棋子闪烁提示-->
+    <div id="turn_white" style="display:none"></div>
+    <div id="turn_black" style="display:none"></div>
+    <!--对局结果提示框-->
+    <div id="suggest_skin">
+    	<div id="suggest_page">
+        	<div id="suggest_head"><i></i>对局结果</div>
+            <ul id="suggest_ul">
+            	<li><span id="suggest_msg">你赢了 !</span></li>
+                <li><a href="javascript:close_suggest()">确定</a></li>
+            </ul>
+        </div>
+    </div>
+    <!--下棋音效-->
+    <audio autoplay id="falling_chess" style="display:none">
+    	<source src="audio/fallingChess.mp3" type="audio/mpeg">
+        Your browser does not support this audio format.
+    </audio>
+    
+    <!--AI对局-->
+    <script type="text/javascript" src="js/CCAI.js"></script>
+    <script type="text/javascript">
+		/*定位下棋提示栏*/
+		$("#prompt_chess").show().css({
+			top:$('#chess_page').offset().top+$('#chess_head').outerHeight()+5,
+			left:$('#chess_page').offset().left,
+			position:'absolute'
+		});
+		/*定位下棋提示栏：棋子闪烁提示*/
+		$("#turn_black").show().css({
+			top:$("#prompt_chess").offset().top+$('#prompt_chess').outerHeight(),
+			left:$("#prompt_chess").offset().left+5,
+			position:'absolute'
+		});
+		$("#turn_white").show().css({
+			top:$("#prompt_chess").offset().top+$('#prompt_chess').outerHeight(),
+			left:$("#prompt_chess").offset().left+$('#prompt_chess').outerWidth()-$("#turn_white").outerWidth()-5,
+			position:'absolute'
+		});
+	
+		var chessSize = 0;//棋格数目
+		var chessSpace = 0;//棋格间距
+		var chessRadius = 0;//棋子半径
+		var chessCenterMark,chessAroundMark;//棋盘标识点
+		
+		var battleModeFlag = true;//对战模式标识
+		var whoFirstHand = "person";//先手
+		var enabledAI = false;//是否启动AI，默认启动
+		var chessColor = true;//落子颜色标记，true表示黑色，重新开局需要恢复
+		var gameOver = true;//游戏结束标记，true表示结束，只有点击开始才能对局
+		var ccGameOver = true;//CC模式对战结束标记。true表示结束
+		var gameAgain = false;//再来一局
+		var u = 0, v = 0;//记录最高分对应的棋子位置
+		/*双方游戏耗时*/
+		var blackTakeTime = 0,whiteTakeTime = 0;
+		/*倒计时*/
+		var blackCountdown = 60,whiteCountdown = 60;
+		/*记录计时器ID，为了初始化时清除*/
+		var blackTimerID,whiteTimerID,cycleTimerID,delayChessID,delayFirstChessID;
+		
+		/*计时、倒计时显示初始化*/
+		document.getElementById("show_time_black").innerText = "00:00:00";
+		document.getElementById("show_countdown").innerText = "0";
+		document.getElementById("show_time_white").innerText = "00:00:00";
+	
+		/*声明分数统计数组*/
+		var personScore = [];
+		var computerScore = [];
+
+		var personWinStatistics = 0,computerWinStatistics = 0,winArray = [];//统计人与电脑各自获胜次数
+		
+		/*声明一维赢法数组*/
+		var wins = [];
+		
+		/*声明赢法的统计数组,统计每一种赢法下当前实现的棋子个数*/
+		var personWin = [];//玩家赢法统计
+		var computerWin = [];//电脑赢法统计
+		
+		/*声明棋盘落子保存数组*/
+		var chessLegalArray = [];
+		
+		/*统计赢法种类*/
+		var count = 0;
+	
+		var chess = document.getElementById("chess");
+		var context = chess.getContext("2d");//棋盘画布
+		
+		var watermark = new Image();/*棋盘水印*/
+		watermark.src = "images/watermark.jpg";
+		
+		/*五子棋正文：赢法数组
+		*功能：生成赢法数组，记录所有赢法
+		*/
+		function win_array(){
+			/*声明赢法数组*/
+			for(var i = 0;i<chessSize;i++){
+				wins[i] = [];
+				for(var j = 0;j<chessSize;j++){
+					wins[i][j] = [];
+				}
+			}
+			<!--建立赢法数组-->
+			/*竖线赢法*/
+			for(var i = 0;i<chessSize;i++){//全部列的赢法
+				for(var j = 0;j<chessSize-4;j++){//每一列的赢法
+					for(var k = 0;k<5;k++){//产生一种列赢法
+						wins[i][j+k][count] = true;
+					}
+					count++;
+				}
+			}
+			/*横线赢法*/
+			for(var i = 0;i<chessSize;i++){//全部行的赢法
+				for(var j = 0;j<chessSize-4;j++){//每一行的赢法
+					for(var k = 0;k<5;k++){//产生一种行赢法
+						wins[j+k][i][count] = true;
+					}
+					count++;
+				}
+			}
+			/*斜线赢法*/
+			for(var i = 0;i<chessSize-4;i++){//全部斜线的赢法
+				for(var j = chessSize-1;j>3;j--){//每一斜线的赢法
+					for(var k = 0;k<5;k++){//产生一种斜线赢法
+						wins[i+k][j-k][count] = true;
+					}
+					count++;
+				}
+			} 
+			/*反斜线赢法*/
+			for(var i = 0;i<chessSize-4;i++){//全部反斜线的赢法
+				for(var j = 0;j<chessSize-4;j++){//每一反斜线的赢法
+					for(var k = 0;k<5;k++){//产生一种反斜线赢法
+						wins[i+k][j+k][count] = true;
+					}
+					count++;
+				}
+			}
+		}
+
+
+<!--菜单栏-->	
+/*--------------------------------------------------数据交换--------------------------------------------------*/
+		/*菜单栏：胜负统计：读取
+		*功能：通过xml获取已记录胜负统计值
+		*注：需要XMLHttpRequest对象
+		*/
+		var xmlhttp;
+		if (window.XMLHttpRequest){// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		}
+		else{// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.open("GET","game_recording.xml",false);
+		xmlhttp.send();
+		xmlDoc = xmlhttp.responseXML;
+		
+		for(var i = 0; i < xmlDoc.length; i++){
+			if(xmlDoc.getElementsByTagName["player"][i].getAttribute("name") == "wingle"){
+				personWinStatistics = parseInt(xmlDoc.getElementsByTagName["player"][i].getAttribute("person_win"));
+				personWinStatistics = parseInt(xmlDoc.getElementsByTagName["player"][i].getAttribute("computer_win"));
+			}
+		}
+/*--------------------------------------------------数据交换--------------------------------------------------*/
+		/*菜单栏：胜负统计：读取
+		*功能：通过Ajax获取已记录胜负统计值
+		*注：用到Ajax技术
+		*/
+		/*
+		window.onload = function(){
+			$.ajax({
+				type:"GET",
+				url:"game_recording.php?data=" + "game-recording",
+				dataType:"json",
+				success: function(data){
+					if(data.success){
+						personWinStatistics = parseInt(data.personWin,10);
+						computerWinStatistics = parseInt(data.computerWin,10);
+						show_game_recording(personWinStatistics,computerWinStatistics);
+					}else{
+						alert("获取胜负记录失败 ！");
+					}
+				},
+				error: function(e){
+					alert("发生错误："+e.status);
+				},
+			});
+		}
+		*/
+		/*菜单栏：胜负统计：保存
+		*功能：通过Ajax保存当前胜负统计值
+		*parm1 Array winStatistics //0=>personWinStatistics,1=>computerWinStatistics
+		*注：用到Ajax技术
+		*/
+		/*function save_game_recording(winStatistics){
+			$.ajax({
+				type:"POST",
+				url:"game_recording.php",
+				data:{
+					recording:winStatistics,
+				},
+				dataType:"json",
+				success: function(data){
+				},
+				error:function(e){
+					alert("发生错误："+e.status);
+				}
+			});
+		}
+		*/
+		/*菜单栏：胜负统计：展示
+		*功能：将胜负统计情况显示到棋盘上方；展示格式：获胜次数/下棋总数
+		*parm1 integer personWinNumbers //人获胜次数
+		*parm2 integer computerWinNumbers //电脑获胜次数
+		*/
+		function show_game_recording(personWinNumbers,computerWinNumbers){
+			var gameTotalNumbers = personWinNumbers + computerWinNumbers;
+			var showWinStatistics = personWinNumbers+'/'+gameTotalNumbers;//胜负统计值展示格式：获胜次数/下棋总数
+			document.getElementById("game_recording").innerText = showWinStatistics;
+		}
+/**************************************************点击事件**************************************************/		
+		/*菜单栏：AI调试
+		*功能：可以随时暂停、启动AI
+		*/
+		var optimizeOption = document.getElementById("optimize_AI");
+		optimizeOption.onclick = function(){
+			if(enabledAI){
+				optimizeOption.style.background = "url(images/startAI.jpg)";
+				optimizeOption.setAttribute("title","点击暂停AI ！");
+				var ch = compare_chess_numbers();//获得当前黑白棋子数目比较结果
+				if(ch == 1){
+					AI();
+				}
+				if(ch == 0&&(whoFirstHand == "computer")){
+					AI();
+				}
+			}else{
+				optimizeOption.style.background = "url(images/pauseAI.jpg)";
+				optimizeOption.setAttribute("title","点击启动AI ！");
+			}
+			enabledAI = !enabledAI;
+		}
+		/*黑白棋子数目比较
+		*return 1//人下的棋子多于电脑
+		*return 2//人下的棋子少于电脑
+		*return 0//人下的棋子等于电脑
+		*/
+		function compare_chess_numbers(){
+			var personChesses = 0,computerChesses = 0;
+			for(var i = 0;i<chessLegalArray.length;i++){
+				for(var j = 0;j<chessLegalArray[i].length;j++){
+					if(chessLegalArray[i][j] == 1){
+						personChesses++;
+					}else if(chessLegalArray[i][j] == 2){
+						computerChesses++;
+					}
+				}
+			}
+			if(personChesses>computerChesses){
+				return 1;
+			}else if(personChesses<computerChesses){
+				return 2;
+			}else{
+				return 0;
+			}
+		}
+				
+		/*菜单栏：先手选择
+		*功能：选择谁执黑先走：人（默认）和电脑
+		*parm string personOrComputer = "person" //先手
+		*/
+		function first_hand(){
+			var personOrComputer = arguments[0]?arguments[0]:"person";
+			switch(personOrComputer){
+				case "person":
+					break;
+				case "computer":
+					var x = chessCenterMark+Math.round(Math.random()*8-4);
+					var y = chessCenterMark+Math.round(Math.random()*8-4);
+					fallingChess.play();
+					drawChess(x,y,chessColor);//电脑先手，开局先在棋盘中心附近落第一子
+					chessLegalArray[x][y] = 2;
+					for(var z = 0;z<count;z++){//更新赢法统计数组
+						if(wins[x][y][z]){
+							computerWin[z]++;
+							personWin[z] = 6;
+						}
+					}
+					chessColor = false;//电脑先手，人落的第一子为白子
+					break;
+				default:alert('请重新选择');
+			}
+		}
+		
+		/*菜单栏：对战模式
+		*功能：对战模式选择：人机对战（默认）和人人对战
+		*parm string battleMode = "PC" //对战模式
+		*/
+		function battle_mode(){
+			var battleMode = arguments[0]?arguments[0]:"PC";//对战模式默认为人机
+			switch(battleMode){
+				case "PC":
+					battleModeFlag = true;
+					break;
+				case "PP":
+					battleModeFlag = false;
+					/*当选中人人对战模式时，将先手选择栏切换为人*/
+					var ppFirstHand = document.getElementById("first_hand");
+					ppFirstHand.options[0].selected = true;
+					break;
+				case "CC":
+					battleModeFlag = "CC";
+					/*当选中CC模式时，将先手模式切换为电脑*/
+					var ccFirstHand = document.getElementById("first_hand");
+					ccFirstHand.options[1].selected = true;
+					gameOver = true;
+					break;
+				default:alert("请重新选择 ！");
+			}
+		}
+		
+		/*菜单栏：棋格数目
+		*功能：绘制不同棋格数目的棋盘：15x15（默认）和19x19
+		*parm integer chessNumber = 15//棋格数目
+		*/
+		function choose_chessnum(){
+			var chessNumber = arguments[0]?arguments[0]:15;//棋格数目默认为15x15
+			switch(chessNumber){
+				case 15:
+					chessSize = 15;
+					chessSpace = 30;
+					chessRadius = 13;
+					chess.setAttribute("width","450px");
+					chess.setAttribute("height","450px");
+					chess.style.margin = "50px 0 0 75px";
+					context.strokeStyle = "#BFBFBF";//画笔颜色
+					break;
+				case 19:
+					chessSize = 19;
+					chessSpace = 26;
+					chessRadius = 11;
+					chess.setAttribute("width","494px");
+					chess.setAttribute("height","494px");
+					chess.style.margin = "40px 0 0 53px";
+					context.strokeStyle = "#BFBFBF";
+					break;
+				default:alert("请重新选择！");
+			}
+		}
+/**************************************************select改变事件**************************************************/		
+		/*菜单栏：棋盘样式
+		*功能：设置棋盘样式选择框背景
+		*注：select选项改变需要用onchange监听
+		*/
+		var chooseChessboard = document.getElementById("choose_chessboard");
+		var indexType,chessboardType;
+		chooseChessboard.onchange = function(){
+			/*从棋盘样式选择框获取用户选定的棋盘*/
+			indexType = chooseChessboard.selectedIndex;
+			chessboardType = chooseChessboard.options[indexType].value;
+			if(chessboardType == "dark"){
+				chooseChessboard.style.background = "url(images/chess_background_dark.jpg)";
+			}else if(chessboardType == "white"){
+				chooseChessboard.style.background = "url(images/chess_background_white.jpg)";
+			}
+		}
+		/*菜单栏：棋盘样式
+		*功能：绘制不同样式的棋盘：黑底（默认）和白底
+		*parm string chessStyle = "dark" //棋盘样式
+		*/
+		function choose_chessboard(){
+			var chessStyle = arguments[0]?arguments[0]:"dark";//棋盘样式默认为dark
+			switch(chessStyle){
+				case "dark":
+					context.clearRect(0,0,chessSize*chessSpace,chessSize*chessSpace);
+					/*画棋盘线*/
+					drawLine();
+					break;
+				case "white":
+					context.clearRect(0,0,chessSize*chessSpace,chessSize*chessSpace);
+					context.fillStyle = "#FFF";
+					context.fillRect(0,0,chessSize*chessSpace,chessSize*chessSpace);
+					/*画水印*/
+					context.drawImage(watermark,0,0,chessSize*chessSpace,chessSize*chessSpace);
+					drawLine();
+					break;
+				default:alert("请重新选择！");
+			}
+		}
+<!--菜单栏-->
+
+<!--对局提示-->
+		var turnBlack = document.getElementById("turn_black");
+		var turnWhite = document.getElementById("turn_white");
+		/*对局提示，包括游戏双方耗时、下棋倒计时、下棋闪烁提示*/
+		function suggest_chess(){
+			if(!gameOver){
+				if(chessColor){
+					whiteCountdown = 60;
+					blackTakeTime++;
+					turnBlack.style.background = "url(images/black_chess_blank.jpg)";
+					blackTimerID = setTimeout("switch_background('black')",500);
+					if(blackCountdown>=0){
+						document.getElementById("show_countdown").innerText = blackCountdown;
+					}else{
+						document.getElementById("show_countdown").innerText = 0;
+					}
+					blackCountdown--;
+				}
+				if(!chessColor){
+					blackCountdown = 60;
+					whiteTakeTime++;
+					turnWhite.style.background = "url(images/black_chess_blank.jpg)";
+					whiteTimerID = setTimeout("switch_background('white')",500);
+					if(whiteCountdown>=0){
+						document.getElementById("show_countdown").innerText = whiteCountdown;
+					}else{
+						document.getElementById("show_countdown").innerText = 0;
+					}
+					whiteCountdown--;
+				}
+				
+				document.getElementById("show_time_black").innerText = transform_time(blackTakeTime);	
+				document.getElementById("show_time_white").innerText = transform_time(whiteTakeTime);
+			}
+			cycleTimerID = setTimeout("suggest_chess()",1000);
+		}
+		/*棋子闪烁背景切换*/
+		function switch_background(switchContent){
+			if(switchContent == "black"){
+				turnBlack.style.background = "url(images/black_chess_background.jpg)";
+			}else if(switchContent == "white"){
+				turnWhite.style.background = "url(images/white_chess_background.jpg)";
+			}
+		}
+/**************************************************点击事件：对局状态【暂停，继续】**************************************************/
+		/*对局状态：暂停与继续*/
+		var countdownStatus = document.getElementById("countdown");
+		countdownStatus.onclick = function(){
+			if(!gameAgain){return;}
+			if(battleModeFlag != "CC"){
+				if(!gameOver){
+					countdownStatus.setAttribute("title","点击继续对局 ！");
+				}else{
+					countdownStatus.setAttribute("title","点击暂停对局 ！");
+				}
+				gameOver = !gameOver;
+			}
+			/*如果对局模式为CC*/
+			if(battleModeFlag == "CC"){
+				if(!ccGameOver){
+					countdownStatus.setAttribute("title","点击继续对局 ！");
+				}else{
+					countdownStatus.setAttribute("title","点击暂停对局 ！");
+				}
+				ccGameOver = !ccGameOver;
+			}
+		}
+		/*将计时秒数转化为时分秒形式*/
+		function transform_time(seconds){
+			var hours = Math.floor(seconds/3600);
+			var mins = Math.floor(seconds%3600/60);
+			var secs = seconds%60;
+			if(hours<10){
+				hours = '0'+hours;
+			}
+			if(mins<10){
+				mins = '0'+mins;
+			}
+			if(secs<10){
+				secs = '0'+secs;
+			}
+			return hours+":"+mins+":"+secs;
+		}
+		/*重新开始需要清除计时器*/
+		function clear_timer(){
+			clearTimeout(blackTimerID);
+			clearTimeout(whiteTimerID);
+			clearTimeout(cycleTimerID);
+			clearInterval(AI1_ID);
+			clearInterval(AI2_ID);
+			clearTimeout(delayFirstChessID);
+		}
+<!--对局提示-->	
+
+<!--对局结果提示框-->	
+		/*提示框：打开对局结果提示框
+		*功能：将获取到的对局提示信息写入提示框并让其显示
+		*parm string suggestMsg //对局结果提示文本
+		*/
+		function open_suggest(suggestMsg){
+			var suggestLabel = document.getElementById("suggest_msg");
+			suggestLabel.innerText = suggestMsg;
+			document.getElementById("suggest_skin").style.display = "block";
+		}
+		
+		/*提示框：关闭对局结果提示框
+		*功能：当点击超链接"确定"按钮时执行该函数，关闭提示框
+		*/
+		function close_suggest(){
+			document.getElementById("suggest_skin").style.display = "none";
+		}
+<!--对局结果提示框-->	
+
+<!--棋盘绘制-->		
+		/*五子棋正文：棋盘标识点
+		*功能：绘制棋盘标识点
+		*parm1 integer x //标识点横坐标，实际为第x条棋盘线，x从0开始取
+		*parm2 integer y //纵坐标
+		*parm3 string  color //标识点颜色
+		*/
+		function mark_color(x,y,color){
+			/*画弧*/
+			context.beginPath();
+			context.arc(chessSpace/2+x*chessSpace,chessSpace/2+y*chessSpace,chessRadius/2,0,2*Math.PI);
+			context.closePath();
+			/*获取圆弧填充的渐变颜色*/
+			var getMarkColor = context.createRadialGradient(chessSpace/2+x*chessSpace+2,chessSpace/2+y*chessSpace-2,chessRadius,chessSpace/2+x*chessSpace+2,chessSpace/2+y*chessSpace-2,0);
+			getMarkColor.addColorStop(0,color);
+			getMarkColor.addColorStop(1,"#FFF");
+			/*获取填充样式并填充，此处为由外到内逐渐变白的圆形色域*/
+			context.fillStyle = getMarkColor;
+			context.fill();
+		}
+		
+		/*五子棋正文：棋盘线
+		*功能：画棋盘线
+		*/
+		function drawLine(){
+			for(var i = 0;i<chessSize;i++){
+				context.moveTo(chessSpace/2,chessSpace/2+chessSpace*i);
+				context.lineTo(chessSize*chessSpace-chessSpace/2,chessSpace/2+chessSpace*i);
+				context.moveTo(chessSpace/2+chessSpace*i,chessSpace/2);
+				context.lineTo(chessSpace/2+chessSpace*i,chessSize*chessSpace-chessSpace/2);
+				context.stroke();
+			}
+		}
+		
+		/*五子棋正文：棋子
+		*功能：画棋子
+		*parm1 integer i //要绘制的棋子的横坐标，实际为第i条棋盘线，i从0开始取
+		*parm2 integer j //纵坐标
+		*parm3 string chooseColor //棋子颜色并且色域渐变
+		*/
+		function drawChess(i,j,chooseColor){
+			context.beginPath();
+			context.arc(chessSpace/2+i*chessSpace,chessSpace/2+j*chessSpace,chessRadius,0,2*Math.PI);
+			context.closePath();
+			var getChessColor = context.createRadialGradient(chessSpace/2+i*chessSpace+2,chessSpace/2+j*chessSpace-2,chessRadius,chessSpace/2+i*chessSpace+2,chessSpace/2+j*chessSpace-2,0);
+			if(chooseColor){//生成黑棋
+				getChessColor.addColorStop(0,"#0A0A0A");
+				getChessColor.addColorStop(1,"#636766");
+			}else{//生成白棋
+				getChessColor.addColorStop(0,"#D1D1D1");
+				getChessColor.addColorStop(1,"#F9F9F9");
+			}
+			context.fillStyle = getChessColor;
+			context.fill();
+		}
+<!--棋盘绘制-->	
+
+/*00000000000000000000000000000000000000000000000000初始化：函数00000000000000000000000000000000000000000000000000*/	
+		/*五子棋正文：初始化棋盘
+		*功能：再来一局，重新画棋盘并将上一局产生的数据清空
+		*/
+		function one_more_game(){
+			/*落子颜色标记和游戏结束标记，开局需要恢复*/
+			chessColor = true;
+			//gameOver = false;
+			
+			/*从棋格数目选择框中获取用户选定的棋格数目*/
+			var chooseChessNumber = document.getElementById("choose_chessnumber");
+			var indexNumber = chooseChessNumber.selectedIndex;
+			var chessNumber = chooseChessNumber.options[indexNumber].value;
+			choose_chessnum(parseInt(chessNumber,10));
+			
+			/*棋盘落子保存数组，保证每个棋位只能落子一次，重新开局需要清空*/
+			for(var i = 0;i<chessSize;i++){
+				chessLegalArray[i] = [];
+				for(var j = 0;j<chessSize;j++){
+					chessLegalArray[i][j] = 0;
+				}
+			}
+			
+			/*重新生成赢法数组*/
+			count = 0;//赢法种类统计值归零
+			win_array();//选择棋格数目不同的棋盘需要重新生成赢法数组
+			
+			/*初始化赢法统计数组，重新开局需要清空*/
+			for(var i = 0;i<count;i++){
+				personWin[i] = 0;
+				computerWin[i] = 0;
+			}
+			
+			/*从对战模式选择框获取用户选定的模式*/
+			var chooseBattleMode = document.getElementById("choose_chessmode");
+			var indexMode = chooseBattleMode.selectedIndex;
+			var chessBattleMode = chooseBattleMode.options[indexMode].value;
+			battle_mode(chessBattleMode);
+			
+			/*从棋盘样式选择框获取用户选定的棋盘*/
+			indexType = chooseChessboard.selectedIndex;
+			chessboardType = chooseChessboard.options[indexType].value;
+			/*重新画一次棋盘*/
+			choose_chessboard(chessboardType);
+			
+			/*绘制棋盘中心与四周共5个标识点*/
+			chessCenterMark = (chessSize-1)/2;  
+			chessAroundMark = Math.round(chessCenterMark*0.4);//左上标识点坐标为中心标识点的0.4倍
+			var markRelativePosition = chessCenterMark - chessAroundMark;
+			mark_color(chessCenterMark,chessCenterMark,"red");
+			mark_color(chessAroundMark,chessAroundMark,"blue");
+			mark_color(chessCenterMark+markRelativePosition,chessAroundMark,"blue");
+			mark_color(chessCenterMark+markRelativePosition,chessCenterMark+markRelativePosition,"blue");
+			mark_color(chessAroundMark,chessCenterMark+markRelativePosition,"blue");
+			
+			/*先手初始化，默认为人执黑棋先手*/
+			var firstHand = document.getElementById("first_hand");
+			var indexOrder = firstHand.selectedIndex;
+			whoFirstHand = firstHand.options[indexOrder].value;
+			if(battleModeFlag != "CC"){
+				first_hand(whoFirstHand);
+			}else{
+				delayFirstChessID = setTimeout("first_hand(whoFirstHand)",1000);
+			}
+			
+			/*将倒计时的初始化光标滑过置为"点击暂停对局 ！"*/
+			countdownStatus.setAttribute("title","点击暂停对局 ！");
+		}
+		
+/*00000000000000000000000000000000000000000000000000初始化00000000000000000000000000000000000000000000000000*/		
+		/*初始化棋盘*/
+		one_more_game();
+
+/**************************************************点击事件：开始游戏**************************************************/
+		/*菜单栏：再来一次
+		*功能：点击再来一次，调用one_more_game()函数进行数据初始化
+		*/
+		var chessAgain = document.getElementById("chess_again");
+		chessAgain.onclick = function(e){
+			clear_timer();
+			gameAgain = true;  //再来一局
+			gameOver = false;  //点击开始，进行对局
+			ccGameOver = false; //CC模式对局开始
+			chessCounts = 1;  //落子数目初始化
+			/*计时初始化*/
+			blackTakeTime = 0;  
+			whiteTakeTime = 0;
+			/*倒计时初始化*/
+			blackCountdown = 60;
+			whiteCountdown = 60;
+			/*系统初始化*/
+			one_more_game();
+			/*对局结果提示*/
+			suggest_chess();
+			/*初始化CC对局模式*/
+			CCMode();
+		}
+
+<!--对局-->		
+/**************************************************点击事件：下棋**************************************************/		
+		/*五子棋核心：黑白对战
+		*功能：绑定棋盘点击事件，每次点击交替画出一个棋子
+		*/
+		var fallingChess = document.getElementById("falling_chess");//获取音频元素
+		chess.onclick = function(e){
+			/*当对战模式为CC时，落子无效*/
+			if(battleModeFlag == "CC"){
+				return;
+			}
+			/*每下一子倒计时需要初始化*/
+			blackCountdown = 60;
+			whiteCountdown = 60;
+			/*选择对战模式*/
+			if(battleModeFlag){
+				/*人机对战*/
+				if(gameOver){
+					return;
+				}
+				var x = e.offsetX;
+				var y = e.offsetY;
+				var i = Math.floor(x/chessSpace); 
+				//向下取整
+				var j = Math.floor(y/chessSpace);
+				if(chessLegalArray[i][j] == 0){
+					fallingChess.play();//播放音频文件（落子音效）
+					drawChess(i,j,chessColor);
+					
+					if(whoFirstHand == "computer"){
+						chessColor = !chessColor;
+					}
+					/*如果先手是人，则会执行以下代码段；如果先手是电脑（chessColor会变为false，不会执行以下代码段），可以通过临时改变棋子颜色，让其执行以下代码段*/
+					if(chessColor){
+						chessLegalArray[i][j] = 1;
+						for(var k = 0;k<count;k++){//每下一子进行一次赢法统计遍历，统计当前赢法已经实现的步数
+							if(wins[i][j][k]){
+								personWin[k]++;
+								computerWin[k] = 6;
+								if(personWin[k] == 5){
+									open_suggest("你赢了 ！");
+									/*AI调试期间暂停胜负统计*/
+									if(!enabledAI){
+										personWinStatistics++;
+										winArray = [personWinStatistics,computerWinStatistics];
+										save_game_recording(winArray);
+										show_game_recording(personWinStatistics,computerWinStatistics);
+									}	
+									gameOver = true;
+									gameAgain = false;
+								}
+							}
+						}
+					}
+					if(whoFirstHand == "computer"){
+						chessColor = !chessColor;
+					}
+					/*暂停AI进行人工调试*/
+					if(enabledAI){
+						if(whoFirstHand == "computer"){
+							chessColor = !chessColor;
+						}
+						/*如果先手是人，则会执行以下代码段；如果先手是电脑（chessColor会变为false，不会执行以下代码段），可以通过临时改变棋子颜色，让其执行以下代码段*/
+						if(!chessColor){
+							chessLegalArray[i][j] = 2;
+							for(var k = 0;k<count;k++){
+								if(wins[i][j][k]){
+									computerWin[k]++;
+									personWin[k] = 6;
+									if(computerWin[k] == 5){
+										open_suggest("白棋赢了 ！");
+										gameOver = true;
+										gameAgain = false;
+									}
+								}
+							}
+						}
+						if(whoFirstHand == "computer"){
+							chessColor = !chessColor;
+						}
+						chessColor = !chessColor;
+						return;
+					}
+					if(!gameOver){
+						chessColor = !chessColor;
+						AI();
+					}
+				}
+			}else{
+				/*人人对战*/
+				if(gameOver){
+					return;
+				}
+	
+				var x = e.offsetX;
+				var y = e.offsetY;
+				var i = Math.floor(x/chessSpace); 
+				//向下取整
+				var j = Math.floor(y/chessSpace);
+				if(chessLegalArray[i][j] == 0){
+					fallingChess.play();
+					drawChess(i,j,chessColor);
+					if(chessColor){
+						chessLegalArray[i][j] = 1;
+						for(var k = 0;k<count;k++){
+							if(wins[i][j][k]){
+								personWin[k]++;
+								computerWin[k] = 6;
+								if(personWin[k] == 5){
+									open_suggest("黑棋赢了 ！");
+									//window.alert("黑棋赢了 ！");
+									gameOver = true;
+									gameAgain = false;
+								}
+							}
+						}
+					}else{
+						chessLegalArray[i][j] = 2;
+						for(var k = 0;k<count;k++){
+							if(wins[i][j][k]){
+								computerWin[k]++;
+								personWin[k] = 6;
+								if(computerWin[k] == 5){
+									open_suggest("白棋赢了 ！");
+									//window.alert("白棋赢了 ！");
+									gameOver = true;
+									gameAgain = false;
+								}
+							}
+						}
+					}
+					//每下一子进行一次赢法统计遍历，统计当前赢法已经实现的步数
+					
+					if(!gameOver){
+						chessColor = !chessColor;
+					}
+				}
+			}
+		};
+<!--对局-->	
+
+<!--五子棋AI算法-->
+/*++++++++++++++++++++++++++++++++++++++++++++++++++函数：AI算法++++++++++++++++++++++++++++++++++++++++++++++++++*/
+		/*五子棋核心：人机对战
+		*功能：计算机取得按此算法的最优棋路并下子
+		*/
+		function AI(){
+			clearTimeout(delayChessID);//每次落子清除计时器
+			var maxScore = 0;//记录最高分
+			u = 0,v = 0;//记录最高分对应的棋子位置
+			
+			
+			/*初始化分数统计数组，重新开局需要清空*/
+			for(var i = 0;i<chessSize;i++){
+				personScore[i] = [];
+				computerScore[i] = [];
+				for(var j = 0;j<chessSize;j++){
+					personScore[i][j] = 0;
+					computerScore[i][j] = 0;
+				}
+			}
+			
+			/*遍历赢法数组计算得分*/
+			for(var i = 0;i<chessSize;i++){
+				for(var j = 0;j<chessSize;j++){
+					if(chessLegalArray[i][j] == 0){
+						for(var k = 0;k<count;k++){
+							if(wins[i][j][k]){
+								if(personWin[k] == 1){
+									personScore[i][j] += 50;
+								}else if(personWin[k] == 2){
+									personScore[i][j] += 200;
+								}else if(personWin[k] == 3){
+									optimizeAI(i,j,k,"person");
+								}else if(personWin[k] == 4){
+									personScore[i][j] += 2000000;
+								}
+								if(computerWin[k] == 1){
+									computerScore[i][j] += 70;
+								}else if(computerWin[k] == 2){
+									computerScore[i][j] += 220;
+								}else if(computerWin[k] == 3){
+									optimizeAI(i,j,k,"computer");
+								}else if(computerWin[k] == 4){
+									computerScore[i][j] += 2200000;
+								}
+							}
+						}
+						if(personScore[i][j]>maxScore){
+							maxScore = personScore[i][j];
+							u = i;
+							v = j;
+						}else if(personScore[i][j] == maxScore){
+							if(computerScore[i][j]>computerScore[u][v]){
+								u = i;
+								v = j;
+							}
+						}
+						if(computerScore[i][j]>maxScore){
+							maxScore = computerScore[i][j];
+							u = i;
+							v = j;
+						}else if(computerScore[i][j] == maxScore){
+							if(personScore[i][j]>personScore[u][v]){
+								u = i;
+								v = j;
+							}
+						}
+					}
+				}
+			}
+			delayChessID = setTimeout("delay_chess()",500);
+		}
+		/*延迟电脑落子时间*/
+		function delay_chess(){
+			fallingChess.play();
+			drawChess(u,v,chessColor);
+			chessLegalArray[u][v] = 2;
+			for(var k = 0;k<count;k++){
+				if(wins[u][v][k]){
+					computerWin[k]++;
+					personWin[k] = 6;
+					if(computerWin[k] == 5){
+						open_suggest("你输了 ！");
+						//window.alert("你输了 ！");
+						computerWinStatistics++;
+						winArray = [personWinStatistics,computerWinStatistics];
+						save_game_recording(winArray);
+						show_game_recording(personWinStatistics,computerWinStatistics);
+						gameOver = true;
+					}
+				}
+			}
+			if(!gameOver){
+				chessColor = !chessColor;
+			}
+		}
+		
+		//找到坐标和当前赢法的关系，给予相应分数，比如黑棋三子两边若没有棋子则得分应该较高，若一边有黑棋，则得分较低
+		function optimizeAI(i,j,k,id){
+			//第k种赢法下人的分数统计
+			if(id=="person"){
+				if(k==(i*(chessSize-4)+(j-4))){/******竖线统计******/
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j-4]==0)&&(chessLegalArray[i][j-1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j-4]==0)&&(chessLegalArray[i][j-1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j-4]==2)&&(chessLegalArray[i][j+1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j-4]==2)&&(chessLegalArray[i][j+1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+1)){
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j-3]==0)&&(chessLegalArray[i][j+2]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j-3]==0)&&(chessLegalArray[i][j+2]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j+2]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j+2]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+2)){
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j-2]==0)&&(chessLegalArray[i][j+3]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j-2]==0)&&(chessLegalArray[i][j+3]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+3]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+3]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+3)){
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j-1]==0)&&(chessLegalArray[i][j+4]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j-1]==0)&&(chessLegalArray[i][j+4]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+4]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+4]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+4)){
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j+4]==2)&&(chessLegalArray[i][j-1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i][j+1]==1)&&(chessLegalArray[i][j+2]==1)&&(chessLegalArray[i][j+3]==1)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4))){/******横线统计******/
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i-4][j]==0)&&(chessLegalArray[i+1][j]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i-4][j]==0)&&(chessLegalArray[i+1][j]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i-4][j]==2)&&(chessLegalArray[i+1][j]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i-4][j]==2)&&(chessLegalArray[i+1][j]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+1)){
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i-3][j]==0)&&(chessLegalArray[i+2][j]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i-3][j]==0)&&(chessLegalArray[i+2][j]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i+2][j]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i+2][j]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+2)){
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i-2][j]==0)&&(chessLegalArray[i+3][j]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i-2][j]==0)&&(chessLegalArray[i+3][j]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+3][j]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+3][j]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+3)){
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i-1][j]==0)&&(chessLegalArray[i+4][j]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i-1][j]==0)&&(chessLegalArray[i+4][j]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+4][j]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+4][j]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+4)){
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i+4][j]==0)&&(chessLegalArray[i-1][j]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i+4][j]==0)&&(chessLegalArray[i-1][j]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i+4][j]==2)&&(chessLegalArray[i-1][j]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j]==1)&&(chessLegalArray[i+2][j]==1)&&(chessLegalArray[i+3][j]==1)&&(chessLegalArray[i+4][j]==2)&&(chessLegalArray[i-1][j]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(570+(i-4)*(chessSize-4)+(chessSize-j-5))){/******正斜线统计*******/
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i-4][j+4]==0)&&(chessLegalArray[i+1][j-1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i-4][j+4]==0)&&(chessLegalArray[i+1][j-1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i-4][j+4]==2)&&(chessLegalArray[i+1][j-1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i-4][j+4]==2)&&(chessLegalArray[i+1][j-1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(570+(i-3)*(chessSize-4)+(chessSize-j-4))){
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i-3][j+3]==0)&&(chessLegalArray[i+2][j-2]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i-3][j+3]==0)&&(chessLegalArray[i+2][j-2]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i+2][j-2]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i+2][j-2]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(570+(i-2)*(chessSize-4)+(chessSize-j-3))){
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i-2][j+2]==0)&&(chessLegalArray[i+3][j-3]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i-2][j+2]==0)&&(chessLegalArray[i+3][j-3]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+3][j-3]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+3][j-3]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(570+(i-1)*(chessSize-4)+(chessSize-j-2))){
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i-1][j+1]==0)&&(chessLegalArray[i+4][j-4]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i-1][j+1]==0)&&(chessLegalArray[i+4][j-4]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+4][j-4]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+4][j-4]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(570+(i)*(chessSize-4)+(chessSize-j-1))){
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i+4][j-4]==0)&&(chessLegalArray[i-1][j+1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i+4][j-4]==0)&&(chessLegalArray[i-1][j+1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i+4][j-4]==2)&&(chessLegalArray[i-1][j+1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j-1]==1)&&(chessLegalArray[i+2][j-2]==1)&&(chessLegalArray[i+3][j-3]==1)&&(chessLegalArray[i+4][j-4]==2)&&(chessLegalArray[i-1][j+1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(795+(i-4)*(chessSize-4)+(j-4))){/******反斜线统计******/
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i-4][j-4]==0)&&(chessLegalArray[i+1][j+1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i-4][j-4]==0)&&(chessLegalArray[i+1][j+1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i-4][j-4]==2)&&(chessLegalArray[i+1][j+1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i-4][j-4]==2)&&(chessLegalArray[i+1][j+1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(795+(i-3)*(chessSize-4)+(j-3))){
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i-3][j-3]==0)&&(chessLegalArray[i+2][j+2]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i-3][j-3]==0)&&(chessLegalArray[i+2][j+2]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i+2][j+2]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i+2][j+2]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(795+(i-2)*(chessSize-4)+(j-2))){
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i-2][j-2]==0)&&(chessLegalArray[i+3][j+3]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i-2][j-2]==0)&&(chessLegalArray[i+3][j+3]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+3][j+3]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+3][j+3]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(795+(i-1)*(chessSize-4)+(j-1))){
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i-1][j-1]==0)&&(chessLegalArray[i+4][j+4]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i-1][j-1]==0)&&(chessLegalArray[i+4][j+4]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+4][j+4]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+4][j+4]==2)){
+						personScore[i][j] += 200;
+					}
+				}else if(k==(795+(i)*(chessSize-4)+(j))){
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i+4][j+4]==0)&&(chessLegalArray[i-1][j-1]==0)){
+						personScore[i][j] += 300000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i+4][j+4]==0)&&(chessLegalArray[i-1][j-1]==2)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i+4][j+4]==2)&&(chessLegalArray[i-1][j-1]==0)){
+						personScore[i][j] += 2000;
+					}
+					if((chessLegalArray[i+1][j+1]==1)&&(chessLegalArray[i+2][j+2]==1)&&(chessLegalArray[i+3][j+3]==1)&&(chessLegalArray[i+4][j+4]==2)&&(chessLegalArray[i-1][j-1]==2)){
+						personScore[i][j] += 200;
+					}
+				}else{
+					personScore[i][j] += 600;
+				}
+			}
+			/*第k种赢法下电脑的分数统计*/
+			if(id=="computer"){
+				if(k==(i*(chessSize-4)+(j-4))){/******竖线统计******/
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j-4]==0)&&(chessLegalArray[i][j-1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j-4]==0)&&(chessLegalArray[i][j-1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j-4]==1)&&(chessLegalArray[i][j+1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j-3]==2)&&(chessLegalArray[i][j-4]==1)&&(chessLegalArray[i][j+1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+1)){
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j-3]==0)&&(chessLegalArray[i][j+2]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j-3]==0)&&(chessLegalArray[i][j+2]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j+2]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j-2]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j-3]==1)&&(chessLegalArray[i][j+2]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+2)){
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j-2]==0)&&(chessLegalArray[i][j+3]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j-2]==0)&&(chessLegalArray[i][j+3]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+3]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j-1]==2)&&(chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j-2]==1)&&(chessLegalArray[i][j+3]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+3)){
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j-1]==0)&&(chessLegalArray[i][j+4]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j-1]==0)&&(chessLegalArray[i][j+4]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+4]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j-1]==1)&&(chessLegalArray[i][j+4]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(i*(chessSize-4)+(j-4)+4)){
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j+4]==1)&&(chessLegalArray[i][j-1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i][j+1]==2)&&(chessLegalArray[i][j+2]==2)&&(chessLegalArray[i][j+3]==2)&&(chessLegalArray[i][j+4]==0)&&(chessLegalArray[i][j-1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4))){/******横线统计******/
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i-4][j]==0)&&(chessLegalArray[i+1][j]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i-4][j]==0)&&(chessLegalArray[i+1][j]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i-4][j]==1)&&(chessLegalArray[i+1][j]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i-3][j]==2)&&(chessLegalArray[i-4][j]==1)&&(chessLegalArray[i+1][j]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+1)){
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i-3][j]==0)&&(chessLegalArray[i+2][j]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i-3][j]==0)&&(chessLegalArray[i+2][j]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i+2][j]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i-2][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i-3][j]==1)&&(chessLegalArray[i+2][j]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+2)){
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i-2][j]==0)&&(chessLegalArray[i+3][j]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i-2][j]==0)&&(chessLegalArray[i+3][j]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+3][j]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j]==2)&&(chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i-2][j]==1)&&(chessLegalArray[i+3][j]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+3)){
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i-1][j]==0)&&(chessLegalArray[i+4][j]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i-1][j]==0)&&(chessLegalArray[i+4][j]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+4][j]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i-1][j]==1)&&(chessLegalArray[i+4][j]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(285+j*(chessSize-4)+(i-4)+4)){
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i+4][j]==0)&&(chessLegalArray[i-1][j]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i+4][j]==0)&&(chessLegalArray[i-1][j]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i+4][j]==1)&&(chessLegalArray[i-1][j]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j]==2)&&(chessLegalArray[i+2][j]==2)&&(chessLegalArray[i+3][j]==2)&&(chessLegalArray[i+4][j]==1)&&(chessLegalArray[i-1][j]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(570+(i-4)*(chessSize-4)+(chessSize-j-5))){/******正斜线统计*******/
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i-4][j+4]==0)&&(chessLegalArray[i+1][j-1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i-4][j+4]==0)&&(chessLegalArray[i+1][j-1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i-4][j+4]==1)&&(chessLegalArray[i+1][j-1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i-3][j+3]==2)&&(chessLegalArray[i-4][j+4]==1)&&(chessLegalArray[i+1][j-1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(570+(i-3)*(chessSize-4)+(chessSize-j-4))){
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i-3][j+3]==0)&&(chessLegalArray[i+2][j-2]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i-3][j+3]==0)&&(chessLegalArray[i+2][j-2]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i+2][j-2]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i-2][j+2]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i-3][j+3]==1)&&(chessLegalArray[i+2][j-2]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(570+(i-2)*(chessSize-4)+(chessSize-j-3))){
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i-2][j+2]==0)&&(chessLegalArray[i+3][j-3]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i-2][j+2]==0)&&(chessLegalArray[i+3][j-3]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+3][j-3]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j+1]==2)&&(chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i-2][j+2]==1)&&(chessLegalArray[i+3][j-3]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(570+(i-1)*(chessSize-4)+(chessSize-j-2))){
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i-1][j+1]==0)&&(chessLegalArray[i+4][j-4]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i-1][j+1]==0)&&(chessLegalArray[i+4][j-4]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+4][j-4]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i-1][j+1]==1)&&(chessLegalArray[i+4][j-4]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(570+(i)*(chessSize-4)+(chessSize-j-1))){
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i+4][j-4]==0)&&(chessLegalArray[i-1][j+1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i+4][j-4]==0)&&(chessLegalArray[i-1][j+1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i+4][j-4]==1)&&(chessLegalArray[i-1][j+1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j-1]==2)&&(chessLegalArray[i+2][j-2]==2)&&(chessLegalArray[i+3][j-3]==2)&&(chessLegalArray[i+4][j-4]==1)&&(chessLegalArray[i-1][j+1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(795+(i-4)*(chessSize-4)+(j-4))){/******反斜线统计******/
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i-4][j-4]==0)&&(chessLegalArray[i+1][j+1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i-4][j-4]==0)&&(chessLegalArray[i+1][j+1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i-4][j-4]==1)&&(chessLegalArray[i+1][j+1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i-3][j-3]==2)&&(chessLegalArray[i-4][j-4]==1)&&(chessLegalArray[i+1][j+1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(795+(i-3)*(chessSize-4)+(j-3))){
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i-3][j-3]==0)&&(chessLegalArray[i+2][j+2]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i-3][j-3]==0)&&(chessLegalArray[i+2][j+2]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i+2][j+2]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i-2][j-2]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i-3][j-3]==1)&&(chessLegalArray[i+2][j+2]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(795+(i-2)*(chessSize-4)+(j-2))){
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i-2][j-2]==0)&&(chessLegalArray[i+3][j+3]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i-2][j-2]==0)&&(chessLegalArray[i+3][j+3]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+3][j+3]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i-1][j-1]==2)&&(chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i-2][j-2]==1)&&(chessLegalArray[i+3][j+3]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(795+(i-1)*(chessSize-4)+(j-1))){
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i-1][j-1]==0)&&(chessLegalArray[i+4][j+4]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i-1][j-1]==0)&&(chessLegalArray[i+4][j+4]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+4][j+4]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i-1][j-1]==1)&&(chessLegalArray[i+4][j+4]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else if(k==(795+(i)*(chessSize-4)+(j))){
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i+4][j+4]==0)&&(chessLegalArray[i-1][j-1]==0)){
+						computerScore[i][j] += 320000;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i+4][j+4]==0)&&(chessLegalArray[i-1][j-1]==1)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i+4][j+4]==1)&&(chessLegalArray[i-1][j-1]==0)){
+						computerScore[i][j] += 4200;
+					}
+					if((chessLegalArray[i+1][j+1]==2)&&(chessLegalArray[i+2][j+2]==2)&&(chessLegalArray[i+3][j+3]==2)&&(chessLegalArray[i+4][j+4]==1)&&(chessLegalArray[i-1][j-1]==1)){
+						computerScore[i][j] += 220;
+					}
+				}else{
+					computerScore[i][j] += 650;
+				}
+			}
+		}
+<!--五子棋AI算法-->
+	</script>
+</body>
+</html>

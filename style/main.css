@@ -1,0 +1,68 @@
+@charset "utf-8";
+/* CSS Document */
+
+/*棋盘背景设置*/
+#chess_skin{position:absolute; top:0; left:0; width:100%; height:100%; background-color:rgba(0,152,50,0.7);}
+/*棋盘页设置*/
+#chess_page{width:600px; height:600px; position:fixed; top:50%; left:50%; margin:-300px 0 0 -300px; border:1px solid #ebebeb; background-color:#000;}
+/*棋盘头设置*/
+#chess_head{width:590px; height:45px; line-height:45px; background-color:#f5f5f5; padding-left:10px;}
+#chess_head i{display:inline-block; width:28px; height:26px; background:url(../images/logo.png); vertical-align:-6px; margin-right:5px;}
+#chess_head span{font-size:20px; color:#555; padding-right:5px;}
+/*棋盘菜单栏设置*/
+/*棋盘样式选择框背景设置*/
+#choose_chessboard{background:url(../images/chess_background_dark.jpg);}
+/*AI调试栏背景设置*/
+#optimize_AI{background:url(../images/startAI.jpg);}
+/*执黑先手选择框背景设置*/
+#chess_head #first_hand{background:url(../images/chess.jpg); padding-left:26px; color:#ccc; font-size:14px;}
+#chess_head #first_hand:hover{background:url(../images/chess_hover.jpg);}
+/*棋盘样式选择栏、棋格数目选择栏、对战模式选择栏、执黑先手选择栏设置*/
+#choose_chessboard,#choose_chessnumber,#choose_chessmode,#first_hand{float:right; height:45px; line-height:45px; width:65px; outline:none; border:0; border-left:1px solid #ebebeb; background-color:#f5f5f5; vertical-align:4px; appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-left:10px; font-size:16px; color:#555;}
+#chess_head #choose_chessmode{padding-left:20px;}
+/*ul基础设置*/
+#chess_more,#recording,#optimize_AI{float:right; list-style:none; margin:0; padding:0;}
+/*AI调试栏设置*/
+#optimize_AI li{width:65px; height:45px; line-height:45px; text-align:center; border-left:1px solid #ebebeb;}
+#optimize_AI:hover{cursor:pointer;}
+/*胜负记录统计展示栏设置*/
+#recording li{width:85px; height:45px; line-height:45px; font-size:15px; color:#555; border-left:1px solid #ebebeb; text-align:center;}
+/*再来一局点击栏设置*/
+#chess_more li{width:47px; height:45px; line-height:45px; padding-left:13px; font-size:16px; color:#555; border-left:1px solid #ebebeb;}
+/*光标滑过变化设置*/
+#first_hand:hover,#choose_chessmode:hover,#choose_chessnumber:hover,#choose_chessboard:hover,#chess_more li:hover{background-color:#fff; cursor:pointer;}
+/*棋盘设置*/
+#chess{display:block; margin:50px 0 0 75px; box-shadow:-2px -2px 2px #EFEFEF, 5px 5px 5px #B9B9B9;}
+
+/*下棋提示栏*/
+#prompt_chess ul{list-style:none; margin:0; padding:0; width:600px;}
+#prompt_chess #timing li{height:32px; line-height:32px;}
+#prompt_chess #timing li span{font-size:15px; color:#FFF;}
+/*游戏耗时*/
+#show_time_white{margin-right:-20px;}
+#show_time_black{margin-left:-20px;}
+#white_time{float:right; width:100px; text-align:center}
+#black_time{float:left; width:100px; text-align:center;}
+/*倒计时*/
+#countdown{float:right; width:32px; text-align:center; background:url(../images/countdown_background.jpg)}
+#countdown:hover{cursor:pointer;}
+/*占空*/
+.placeholder{float:right; width:184px;}
+/*棋子闪烁提示下棋*/
+#turn_white{height:45px; line-height:45px; width:45px; background:url(../images/white_chess_background.jpg);}
+#turn_black{height:45px; line-height:45px; width:45px; background:url(../images/black_chess_background.jpg);}
+
+/*对局结果提示框*/
+/*提示框背景*/
+#suggest_skin{width:100%; height:100%; position:absolute; top:0; left:0; background-color:rgba(200,200,200,0.7); display:none;}
+/*提示框页面设置*/
+#suggest_page{width:210px; height:160px; position:fixed; top:50%; left:50%; margin:-80px 0 0 -105px; background-color:rgba(255,255,255,0.6); border:1px solid #ebebeb;}
+/*提示框页面头设置*/
+#suggest_head{width:200px; height:40px; line-height:45px; background-color:rgba(245,245,245,0.8); padding-left:10px; font-size:18px; color:#555;}
+#suggest_head i{display:inline-block; width:28px; height:26px; background:url(../images/logo.png); margin-right:10px; vertical-align:-5px;}
+#suggest_ul{padding:10px 0 0 20px; margin:0; list-style:none; width:170px;}
+#suggest_ul li{height:40px; line-height:40px;}
+/*提示框文本内容设置*/
+#suggest_ul li span{display:block; font-size:20px; color:#000; width:100%; text-align:center; margin-left:-15px;}
+/*提示框超链接选项设置*/
+#suggest_ul li a{display:block; width:100%; height:100%; text-align:center; font-size:18px; color:#FFF; text-decoration:none; background-color:rgba(255,165,66,0.8); margin-top:15px;}
